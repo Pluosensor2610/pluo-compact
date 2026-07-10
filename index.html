@@ -727,7 +727,7 @@ function parseSalida(msg){
   const n = parts[1];
   const caudalInput = document.querySelector(`.cfg-caudal[data-sector="${n}"]`);
   if (caudalInput){
-    const caudal = parts[4];
+    const caudal = parts[5];
     if (caudal !== undefined) caudalInput.value = Number(caudal) > 0 ? caudal : "";
   }
 }
