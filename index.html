@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pluo Compact</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0e1a1c">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pluo">
+<meta name="mobile-web-app-capable" content="yes">
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  :root{
+    --bg:#0e1a1c;
+    --card:#132b2e;
+    --card2:#173539;
+    --line:#24474b;
+    --teal:#1fb6a6;
+    --teal-dark:#149385;
+    --text:#eaf6f4;
+    --text-dim:#8fa8a6;
+    --danger:#e35b5b;
+    --warn:#e0a63a;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    min-height:100vh;
+  }
+  .field-bg{
+    position:fixed;
+    inset:0;
+    z-index:-1;
+    background-image:
+      linear-gradient(180deg, rgba(8,20,22,0.55) 0%, rgba(8,20,22,0.75) 60%, rgba(8,20,22,0.92) 100%),
+      url("campo.jpg");
+    background-size:cover;
+    background-position:center;
+    background-repeat:no-repeat;
+  }
+  .screen{display:none;max-width:480px;margin:0 auto;padding:20px 16px 60px;position:relative;z-index:1;}
+  .screen.active{display:block;}
+  h1,h2,h3{margin:0 0 12px;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
+  .topbar .title{font-size:18px;font-weight:600;}
+  .topbar .sub{font-size:12px;color:var(--text-dim);}
+  button{
+    font-family:inherit;
+    cursor:pointer;
+    border:none;
+    border-radius:10px;
+    background:var(--card2);
+    color:var(--text);
+    padding:12px 14px;
+    font-size:14px;
+  }
+  button:active{transform:scale(0.97);}
+  .btn-primary{background:var(--teal);color:#062120;font-weight:600;}
+  .btn-primary:hover{background:var(--teal-dark);}
+  .btn-danger{background:var(--danger);color:#fff;font-weight:600;}
+  .btn-ghost{background:transparent;border:1px solid var(--line);}
+  .btn-icon{background:transparent;padding:6px 10px;font-size:20px;color:var(--text-dim);}
+  input, select{
+    font-family:inherit;
+    background:var(--card2);
+    border:1px solid var(--line);
+    color:var(--text);
+    border-radius:8px;
+    padding:10px 12px;
+    font-size:14px;
+    width:100%;
+  }
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px;
+    margin-bottom:14px;
+  }
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px;}
+  .row{display:flex;gap:10px;}
+  .row > *{flex:1;}
+  .error{color:var(--danger);font-size:13px;margin-top:8px;min-height:16px;}
+  .unidad-item{
+    display:flex;justify-content:space-between;align-items:center;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;margin-bottom:10px;cursor:pointer;
+  }
+  .unidad-item:active{background:var(--card2);}
+  .unidad-item .device{font-size:12px;color:var(--text-dim);}
+  .badge{
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:12px;color:var(--text-dim);
+  }
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--text-dim);}
+  .dot.on{background:var(--teal);box-shadow:0 0 8px var(--teal);}
+  .dot.off{background:#555;}
+  .sector-grid{display:grid;grid-template-columns:1fr;gap:10px;}
+  .sector-btn{
+    background:var(--card2);border:1px solid var(--line);border-radius:12px;
+    padding:14px;text-align:left;position:relative;cursor:pointer;
+    transition:border-color .2s ease;
+  }
+  .sector-btn.active{border-color:var(--teal);background:#0f2b28;}
+  .sector-btn .sector-header{display:flex;justify-content:space-between;align-items:flex-start;}
+  .sector-btn .name{font-weight:600;font-size:14px;}
+  .sector-btn .num{font-size:11px;color:var(--text-dim);}
+  .sector-btn .chevron{
+    font-size:14px;color:var(--text-dim);
+    transition:transform .25s ease;
+    transform:rotate(0deg);
+  }
+  .sector-btn.expanded .chevron{transform:rotate(180deg);}
+  .manual-panel{
+    display:flex;gap:8px;
+    max-height:0;opacity:0;overflow:hidden;visibility:hidden;
+    transition:max-height .25s ease, opacity .2s ease, margin-top .25s ease, visibility 0s linear .25s;
+    margin-top:0;
+  }
+  .manual-panel.open{max-height:120px;opacity:1;margin-top:10px;visibility:visible;transition-delay:0s;}
+  .manual-panel input{width:56px;flex:none;text-align:center;}
+  .status-row{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:var(--text-dim);}
+  .status-row b{color:var(--text);font-weight:600;}
+  .status-row b.pausado-on{
+    color:var(--danger);
+    animation:parpadeo 1s infinite;
+  }
+  @keyframes parpadeo{
+    0%,100%{opacity:1;}
+    50%{opacity:0.25;}
+  }
+  @keyframes parpadeoAlerta{
+    0%,100%{opacity:0.4;}
+    50%{opacity:0;}
+  }
+  #alerta-logo.activa{
+    animation:parpadeoAlerta 1s infinite;
+  }
+  .ctrl-row{display:flex;gap:8px;margin-top:10px;}
+  .ctrl-row button{flex:1;}
+  .checklist{display:flex;flex-direction:column;gap:8px;}
+  .check-item{
+    display:flex;align-items:center;gap:10px;
+    background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+  }
+  .check-item input[type=checkbox]{width:18px;height:18px;flex:none;}
+  .check-item .sname{flex:1;font-size:14px;}
+  .check-item input[type=number]{width:52px;flex:none;text-align:center;}
+  .days{display:flex;gap:6px;flex-wrap:wrap;}
+  .day-chip{
+    padding:8px 0;width:38px;text-align:center;border-radius:8px;
+    background:var(--card2);border:1px solid var(--line);font-size:12px;color:var(--text-dim);
+  }
+  .day-chip.on{background:var(--teal);color:#062120;border-color:var(--teal);font-weight:600;}
+  .tabs{display:flex;gap:8px;margin-bottom:14px;}
+  .tab{flex:1;text-align:center;padding:10px;border-radius:10px;background:var(--card);border:1px solid var(--line);color:var(--text-dim);font-size:13px;}
+  .tab.active{background:var(--teal);color:#062120;font-weight:600;border-color:var(--teal);}
+  .mqtt-indicator{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);}
+  .toast{
+    position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+    background:var(--card2);border:1px solid var(--line);color:var(--text);
+    padding:10px 18px;border-radius:20px;font-size:13px;opacity:0;
+    transition:opacity .3s;pointer-events:none;z-index:50;
+  }
+  .toast.show{opacity:1;}
+  .hint{font-size:11px;color:var(--text-dim);margin-top:6px;}
+</style>
+</head>
+<body>
+
+<div class="field-bg"></div>
+
+<!-- LOGIN -->
+<div id="screen-login" class="screen active">
+  <div style="min-height:80vh;display:flex;flex-direction:column;justify-content:center;">
+    <h1 style="text-align:center;font-size:26px;margin-bottom:4px;">Pluo Compact</h1>
+    <p style="text-align:center;color:var(--text-dim);margin-bottom:28px;">Control de riego</p>
+    <div class="card">
+      <div class="field">
+        <label>Correo</label>
+        <input type="email" id="login-email" autocomplete="username">
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input type="password" id="login-pass" autocomplete="current-password">
+      </div>
+      <button class="btn-primary" style="width:100%" onclick="doLogin()">Ingresar</button>
+      <div class="error" id="login-error"></div>
+    </div>
+  </div>
+</div>
+
+<!-- HOME: lista de unidades -->
+<div id="screen-home" class="screen">
+  <div class="topbar">
+    <div>
+      <div class="title" id="home-cliente-nombre">—</div>
+      <div class="sub">Mis unidades</div>
+    </div>
+    <button class="btn-icon" onclick="doLogout()">⎋</button>
+  </div>
+  <div id="unidades-list"></div>
+  <img src="icon-512.png" alt="Pluo" style="display:block;width:200px;height:200px;margin:40px auto 0;opacity:0.4;">
+</div>
+
+<!-- UNIDAD: detalle -->
+<div id="screen-unidad" class="screen">
+  <div class="topbar">
+    <div>
+      <button class="btn-icon" style="padding:0;font-size:20px;" onclick="goHome()">←</button>
+      <span class="title" id="unidad-nombre">—</span>
+      <div class="sub" id="unidad-device"></div>
+    </div>
+    <div class="mqtt-indicator">
+      <span class="dot off" id="mqtt-dot"></span><span id="mqtt-text">MQTT</span>
+      <button class="btn-icon" style="font-size:14px;padding:2px 6px;" onclick="borrarAlertas()" title="Borrar alertas">🗑</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" id="tab-control" onclick="showTab('control')">Control</div>
+    <div class="tab" id="tab-programas" onclick="showTab('programas')">Programas</div>
+  </div>
+
+  <!-- TAB CONTROL -->
+  <div id="panel-control">
+    <div class="card" style="position:relative;overflow:hidden;">
+      <img src="icon-512.png" alt="" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:220px;height:220px;opacity:0.4;pointer-events:none;z-index:0;">
+      <img id="alerta-logo" src="icon-512-red.png" alt="" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:220px;height:220px;opacity:0;pointer-events:none;z-index:0;">
+      <div style="position:relative;z-index:1;">
+      <h3 style="font-size:14px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;">Estado</h3>
+      <div class="status-row"><span>Sector activo</span><b id="est-sector">—</b></div>
+      <div class="status-row"><span>Programa</span><b id="est-programa">—</b></div>
+      <div class="status-row"><span>Estado</span><b id="est-estado">—</b></div>
+      <div class="status-row"><span>Caudal regado</span><b id="est-caudal">—</b></div>
+      <div class="status-row"><span>Tiempo transcurrido</span><b id="est-transcurrido">—</b></div>
+      <div class="status-row"><span>Tiempo restante</span><b id="est-restante">—</b></div>
+      <div class="status-row"><span>Pausado</span><b id="est-pausa">—</b></div>
+      <div class="ctrl-row">
+        <button class="btn-ghost" onclick="sendSaltar()">Saltar</button>
+        <button class="btn-ghost" id="btn-pausa" onclick="togglePausa()">Pausar</button>
+        <button class="btn-danger" onclick="sendDetener()">Detener</button>
+      </div>
+      <button class="btn-ghost" style="width:100%;margin-top:10px;" onclick="consultarHoraEquipo()">Ver hora del equipo</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:14px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:0;" onclick="toggleCard('riego-manual-body','chevron-riego-manual')">
+        Riego manual
+        <span class="chevron" id="chevron-riego-manual">▾</span>
+      </h3>
+      <div id="riego-manual-body" style="max-height:0;overflow:hidden;opacity:0;transition:max-height .25s ease, opacity .2s ease, margin-top .25s ease;">
+        <div class="sector-grid" id="sectores-manual" style="margin-top:14px;"></div>
+        <div class="hint">Enciende el sector indicado durante el tiempo que definas.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:14px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:0;" onclick="toggleCard('historial-body','chevron-historial'); cargarHistorial();">
+        Últimos riegos
+        <span class="chevron" id="chevron-historial">▾</span>
+      </h3>
+      <div id="historial-body" style="max-height:0;overflow:hidden;opacity:0;transition:max-height .25s ease, opacity .2s ease, margin-top .25s ease;">
+        <div id="historial-lista" style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
+          <div class="hint">Cargando...</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:14px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:0;" onclick="toggleCard('config-body','chevron-config'); consultarConfigEquipo(); renderConfigSectores();">
+        Configuración
+        <span class="chevron" id="chevron-config">▾</span>
+      </h3>
+      <div id="config-body" style="max-height:0;overflow:hidden;opacity:0;transition:max-height .25s ease, opacity .2s ease, margin-top .25s ease;">
+        <div class="field" style="margin-top:14px;">
+          <label>Caudalímetro</label>
+          <select id="config-caudal">
+            <option value="0">Desactivado</option>
+            <option value="1">100 L / pulso</option>
+            <option value="2">1.000 L / pulso</option>
+            <option value="3">10.000 L / pulso</option>
+          </select>
+        </div>
+        <button class="btn-primary" style="width:100%" onclick="guardarCaudal()">Guardar caudalímetro</button>
+
+        <div class="field" style="margin-top:20px;">
+          <label>Sectores — nombre y caudal esperado (m³/h)</label>
+        </div>
+        <div id="config-sectores" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <button class="btn-primary" style="width:100%;margin-top:10px;" onclick="guardarSectores()">Guardar sectores</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.toggleCard = function(bodyId, chevronId){
+      const body = document.getElementById(bodyId);
+      const chevron = document.getElementById(chevronId);
+      const abierto = body.style.maxHeight !== "0px" && body.style.maxHeight !== "";
+      if (abierto){
+        body.style.maxHeight = "0px";
+        body.style.opacity = "0";
+        chevron.style.transform = "rotate(0deg)";
+      } else {
+        body.style.maxHeight = "2000px";
+        body.style.opacity = "1";
+        chevron.style.transform = "rotate(180deg)";
+      }
+    };
+  </script>
+
+  <!-- TAB PROGRAMAS -->
+  <div id="panel-programas" style="display:none;">
+    <div class="card">
+      <div class="field">
+        <label>Programa</label>
+        <select id="prog-select" onchange="loadPrograma()">
+          <option value="1">Programa 1</option>
+          <option value="2">Programa 2</option>
+          <option value="3">Programa 3</option>
+          <option value="4">Programa 4</option>
+          <option value="5">Programa 5</option>
+        </select>
+      </div>
+      <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
+        <label style="margin:0;">Activo</label>
+        <input type="checkbox" id="prog-activo" style="width:20px;height:20px;">
+      </div>
+      <div class="field">
+        <label>Hora de inicio</label>
+        <input type="time" id="prog-hora">
+      </div>
+      <div class="field">
+        <label>Días</label>
+        <div class="days" id="prog-dias"></div>
+      </div>
+      <div class="field">
+        <label>Sectores y duración (min)</label>
+        <div class="checklist" id="prog-sectores"></div>
+      </div>
+      <button class="btn-primary" style="width:100%" onclick="guardarPrograma()">Guardar programa</button>
+      <div class="hint">Guarda en Firestore y envía SETPROG/SETSECTOR al equipo. Requiere firmware actualizado (scheduler por RTC pendiente de implementar).</div>
+      <button class="btn-ghost" style="width:100%;margin-top:10px;" onclick="iniciarProgramaAhora()">Iniciar ahora</button>
+      <div class="hint">Ejecuta este programa de inmediato, sin esperar hora ni día configurado.</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, collection, query, where, getDocs, setDoc
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBSIO3eWIlMTtea1j6aQGuW9W-wF6r-Zdk",
+  authDomain: "pluo-compact-cef5og.firebaseapp.com",
+  projectId: "pluo-compact-cef5og",
+  storageBucket: "pluo-compact-cef5og.firebasestorage.app",
+  messagingSenderId: "443227636027",
+  appId: "1:443227636027:web:c8459adcd92cec1d23f71e"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ---------- MQTT ----------
+const MQTT_HOST = "wss://a09ea288eb4d4cc185767ef42cb5b88c.s1.eu.hivemq.cloud:8884/mqtt";
+const MQTT_USER = "pluo_web_client";
+const MQTT_PASS = "Pluo2610";
+const TOKEN_OP = "OPERADOR_0001";
+const TOKEN_SUPER = "PLUO_SUPER_2610";
+let mqttClient = null;
+let estadoPollInterval = null;
+let currentDeviceId = null;
+let currentUnidadRef = null;
+let salidasCache = []; // [{id, tipo, nombre}]
+let pausado = false;
+
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+function setMqttStatus(connected){
+  document.getElementById("mqtt-dot").className = "dot " + (connected ? "on" : "off");
+  document.getElementById("mqtt-text").textContent = connected ? "MQTT conectado" : "MQTT desconectado";
+}
+
+function connectMqtt(){
+  if (mqttClient) { try{ mqttClient.end(true); }catch(e){} }
+  mqttClient = mqtt.connect(MQTT_HOST, {
+    username: MQTT_USER,
+    password: MQTT_PASS,
+    clientId: "web_" + Math.random().toString(16).slice(2)
+  });
+  mqttClient.on("connect", () => {
+    setMqttStatus(true);
+    if (currentDeviceId) subscribeUnidad(currentDeviceId);
+  });
+  mqttClient.on("close", () => setMqttStatus(false));
+  mqttClient.on("error", () => setMqttStatus(false));
+  mqttClient.on("message", (topic, payload) => {
+    const msg = payload.toString();
+    if (msg.startsWith("EST:")) parseEstado(msg);
+    if (msg.startsWith("HORA:")) parseHora(msg);
+    if (msg.startsWith("REG:")) parseRegistros(msg);
+    if (msg.startsWith("CONFIG:")) parseConfig(msg);
+    if (msg.startsWith("SAL:")) parseSalida(msg);
+  });
+}
+
+function subscribeUnidad(deviceId){
+  mqttClient.subscribe(`pluo/${deviceId}/resp`);
+  publishCmd(`${TOKEN_OP}:GETESTADO`);
+}
+
+function publishCmd(payload){
+  if (!mqttClient || !currentDeviceId) { toast("MQTT no conectado"); return; }
+  mqttClient.publish(`pluo/${currentDeviceId}/cmd`, payload);
+}
+
+let elapsedSecondsServer = 0;
+let duracionTotalSegs = 0;
+let elapsedTickInterval = null;
+
+function formatHHMMSS(totalSeg){
+  totalSeg = Math.max(0, Math.round(totalSeg));
+  const h = Math.floor(totalSeg / 3600);
+  const m = Math.floor((totalSeg % 3600) / 60);
+  const s = totalSeg % 60;
+  return [h, m, s].map(v => String(v).padStart(2, "0")).join(":");
+}
+
+function actualizarTiempos(){
+  document.getElementById("est-transcurrido").textContent = formatHHMMSS(elapsedSecondsServer);
+  if (duracionTotalSegs > 0){
+    document.getElementById("est-restante").textContent = formatHHMMSS(duracionTotalSegs - elapsedSecondsServer);
+  } else {
+    document.getElementById("est-restante").textContent = "—";
+  }
+}
+
+function formatEstadoTexto(codigo){
+  switch (codigo){
+    case "0": return "Inactivo";
+    case "1": return "Regando";
+    case "2": return "Falla";
+    case "3": return "Config";
+    default: return "—";
+  }
+}
+
+// EST:sector:programa:m3:estado:seg_transcurridos:horas_config:min_config:pausa:modo:seg_duracion_total
+function parseEstado(msg){
+  const parts = msg.split(":");
+  document.getElementById("est-sector").textContent = parts[1] ?? "—";
+  document.getElementById("est-estado").textContent = formatEstadoTexto(parts[4]);
+  const caudalM3 = Number(parts[3] ?? 0);
+  document.getElementById("est-caudal").textContent = caudalM3.toFixed(3) + " m³";
+
+  elapsedSecondsServer = Number(parts[5] ?? 0);
+  duracionTotalSegs = Number(parts[10] ?? 0);
+  actualizarTiempos();
+
+  const pausaFlag = parts[8];
+  const modoFlag = parts[9];
+  pausado = pausaFlag === "1";
+  const pausaEl = document.getElementById("est-pausa");
+  pausaEl.textContent = pausado ? "Pausado" : "Activo";
+  pausaEl.classList.toggle("pausado-on", pausado);
+  document.getElementById("btn-pausa").textContent = pausado ? "Reanudar" : "Pausar";
+  document.getElementById("btn-pausa").classList.toggle("btn-danger", pausado);
+  document.getElementById("btn-pausa").classList.toggle("btn-ghost", !pausado);
+  document.getElementById("est-programa").textContent = modoFlag === "1" ? "Manual" : (parts[2] ?? "—");
+
+  const alertaFlag = parts[11];
+  document.getElementById("alerta-logo").classList.toggle("activa", alertaFlag === "1");
+
+  const ejecutando = parts[4] === "1"; // ESTADO_EJECUTANDO
+  if (elapsedTickInterval){ clearInterval(elapsedTickInterval); elapsedTickInterval = null; }
+  if (ejecutando && !pausado){
+    elapsedTickInterval = setInterval(() => {
+      elapsedSecondsServer++;
+      actualizarTiempos();
+    }, 1000);
+  }
+}
+
+// ---------- AUTH ----------
+window.doLogin = async function(){
+  const email = document.getElementById("login-email").value.trim();
+  const pass = document.getElementById("login-pass").value;
+  const errEl = document.getElementById("login-error");
+  errEl.textContent = "";
+  try{
+    await signInWithEmailAndPassword(auth, email, pass);
+  }catch(e){
+    errEl.textContent = "Correo o contraseña incorrectos.";
+  }
+};
+
+window.doLogout = async function(){
+  await signOut(auth);
+};
+
+onAuthStateChanged(auth, async (user) => {
+  if (user){
+    await loadHome(user.uid);
+    showScreen("home");
+    connectMqtt();
+  } else {
+    showScreen("login");
+  }
+});
+
+function showScreen(name){
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById("screen-" + name).classList.add("active");
+}
+
+// ---------- HOME ----------
+async function loadHome(uid){
+  const userSnap = await getDoc(doc(db, "Users", uid));
+  if (!userSnap.exists()){
+    toast("Usuario sin cliente asignado");
+    return;
+  }
+  const clienteRef = userSnap.data().cliente_ref;
+  const clienteSnap = await getDoc(clienteRef);
+  document.getElementById("home-cliente-nombre").textContent = clienteSnap.exists() ? clienteSnap.data().nombre : "—";
+
+  const q = query(collection(db, "Unidades"), where("cliente_ref", "==", clienteRef));
+  const snap = await getDocs(q);
+  const list = document.getElementById("unidades-list");
+  list.innerHTML = "";
+  snap.forEach(d => {
+    const u = d.data();
+    const item = document.createElement("div");
+    item.className = "unidad-item";
+    item.innerHTML = `<div><div>${u.nombre}</div><div class="device">${u.device_id}</div></div><span>›</span>`;
+    item.onclick = () => openUnidad(d.ref, u);
+    list.appendChild(item);
+  });
+  if (snap.empty) list.innerHTML = `<div class="hint">No hay unidades asignadas.</div>`;
+}
+
+window.goHome = function(){
+  if (mqttClient && currentDeviceId) mqttClient.unsubscribe(`pluo/${currentDeviceId}/resp`);
+  if (estadoPollInterval){ clearInterval(estadoPollInterval); estadoPollInterval = null; }
+  if (elapsedTickInterval){ clearInterval(elapsedTickInterval); elapsedTickInterval = null; }
+  currentDeviceId = null;
+  showScreen("home");
+};
+
+// ---------- UNIDAD ----------
+async function openUnidad(unidadRef, unidadData){
+  currentUnidadRef = unidadRef;
+  currentDeviceId = unidadData.device_id;
+  document.getElementById("unidad-nombre").textContent = unidadData.nombre;
+  document.getElementById("unidad-device").textContent = unidadData.device_id;
+  showScreen("unidad");
+  showTab("control");
+
+  const salidasSnap = await getDocs(collection(unidadRef, "Salidas"));
+  salidasCache = [];
+  salidasSnap.forEach(s => salidasCache.push({ id: s.id, ...s.data() }));
+  salidasCache.sort((a,b) => a.id.localeCompare(b.id));
+
+  renderSectoresManual();
+  renderChecklistProgramas();
+
+  if (mqttClient && mqttClient.connected){
+    subscribeUnidad(currentDeviceId);
+  }
+
+  if (estadoPollInterval) clearInterval(estadoPollInterval);
+  estadoPollInterval = setInterval(() => {
+    publishCmd(`${TOKEN_OP}:GETESTADO`);
+  }, 3000);
+}
+
+window.showTab = function(tab){
+  document.getElementById("tab-control").classList.toggle("active", tab === "control");
+  document.getElementById("tab-programas").classList.toggle("active", tab === "programas");
+  document.getElementById("panel-control").style.display = tab === "control" ? "block" : "none";
+  document.getElementById("panel-programas").style.display = tab === "programas" ? "block" : "none";
+  if (tab === "programas") loadPrograma();
+};
+
+function renderSectoresManual(){
+  const grid = document.getElementById("sectores-manual");
+  grid.innerHTML = "";
+  const valvulas = salidasCache.filter(s => Number(s.tipo) === 4);
+  valvulas.forEach(s => {
+    const wrap = document.createElement("div");
+    wrap.className = "sector-btn";
+    wrap.innerHTML = `
+      <div class="sector-header">
+        <div>
+          <div class="num">Salida ${s.id}</div>
+          <div class="name">${s.nombre || ("Sector " + s.id)}</div>
+        </div>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="manual-panel" id="manual-${s.id}">
+        <input type="number" min="0" max="23" placeholder="h" class="dur-hh" id="manual-hh-${s.id}">
+        <input type="number" min="0" max="59" placeholder="m" class="dur-mm" id="manual-mm-${s.id}">
+        <button class="btn-primary" onclick="event.stopPropagation(); activarManual('${s.id}')">Activar</button>
+      </div>
+    `;
+    wrap.querySelector(".sector-header").onclick = () => {
+      wrap.classList.toggle("expanded");
+      document.getElementById(`manual-${s.id}`).classList.toggle("open");
+    };
+    wrap.querySelector(".manual-panel").onclick = (e) => e.stopPropagation();
+    grid.appendChild(wrap);
+  });
+}
+
+window.activarManual = function(sectorId){
+  const hh = Number(document.getElementById(`manual-hh-${sectorId}`).value || 0);
+  const mm = Number(document.getElementById(`manual-mm-${sectorId}`).value || 0);
+  const totalMin = hh * 60 + mm;
+  if (totalMin <= 0){ toast("Ingresa una duración mayor a 0"); return; }
+  publishCmd(`${TOKEN_OP}:MANUAL:${sectorId}:${totalMin}`);
+  setTimeout(()=>publishCmd(`${TOKEN_OP}:GETESTADO`), 300);
+  toast(`Sector ${sectorId} activado ${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`);
+};
+
+// HORA:DD/MM/AAAA:HH:MM:SS:rtc_ok
+function parseHora(msg){
+  const parts = msg.split(":");
+  const fecha = parts[1];
+  const hora = parts[2] + ":" + parts[3] + ":" + parts[4];
+  const rtcOk = parts[5] === "1";
+  if (!rtcOk){
+    toast(`⚠ RTC no conectado — hora no confiable (${fecha} ${hora})`);
+  } else {
+    toast(`Equipo: ${fecha} ${hora}`);
+  }
+}
+
+window.cargarHistorial = function(){
+  document.getElementById("historial-lista").innerHTML = `<div class="hint">Cargando...</div>`;
+  publishCmd(`${TOKEN_OP}:GETREGISTROS`);
+};
+
+// REG:count:DD:MM:HH:MM:sector:programa:duracion_seg:m3:...
+function parseRegistros(msg){
+  const parts = msg.split(":");
+  const count = Number(parts[1] ?? 0);
+  const lista = document.getElementById("historial-lista");
+  if (count === 0){
+    lista.innerHTML = `<div class="hint">Sin riegos registrados aún.</div>`;
+    return;
+  }
+  lista.innerHTML = "";
+  let idx = 2;
+  for (let n = 0; n < count; n++){
+    const dd = parts[idx++];
+    const mo = parts[idx++];
+    const hh = parts[idx++];
+    const mm = parts[idx++];
+    const sector = parts[idx++];
+    const programa = parts[idx++];
+    const duracionSeg = Number(parts[idx++] ?? 0);
+    const m3 = parts[idx++];
+    const progTexto = programa === "0" ? "Manual" : `Prog. ${programa}`;
+    const fechaHora = `${String(dd).padStart(2,"0")}/${String(mo).padStart(2,"0")} ${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+    const item = document.createElement("div");
+    item.style.cssText = "background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;";
+    item.innerHTML = `
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <b>Sector ${sector}</b>
+        <span style="color:var(--text-dim);">${fechaHora}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;color:var(--text-dim);">
+        <span>${progTexto} · ${formatHHMMSS(duracionSeg)}</span>
+        <span>${Number(m3).toFixed(3)} m³</span>
+      </div>
+    `;
+    lista.appendChild(item);
+  }
+}
+
+window.renderConfigSectores = function(){
+  const cont = document.getElementById("config-sectores");
+  cont.innerHTML = "";
+  const valvulas = salidasCache.filter(s => Number(s.tipo) === 4);
+  valvulas.forEach(s => {
+    const row = document.createElement("div");
+    row.className = "check-item";
+    row.innerHTML = `
+      <input type="text" data-sector="${s.id}" class="cfg-nombre" value="${s.nombre || ''}" placeholder="Nombre" style="flex:1;text-align:left;">
+      <input type="number" step="0.1" min="0" data-sector="${s.id}" class="cfg-caudal" placeholder="m³/h" style="width:70px;text-align:center;">
+    `;
+    cont.appendChild(row);
+    publishCmd(`${TOKEN_OP}:GETSALIDA:${s.id}`);
+  });
+};
+
+// SAL:n:tipo:sector_asoc:nombre:caudal_esperado
+function parseSalida(msg){
+  const parts = msg.split(":");
+  const n = parts[1];
+  const caudalInput = document.querySelector(`.cfg-caudal[data-sector="${n}"]`);
+  if (caudalInput){
+    const caudal = parts[4];
+    if (caudal !== undefined) caudalInput.value = Number(caudal) > 0 ? caudal : "";
+  }
+}
+
+window.guardarSectores = async function(){
+  const filas = document.querySelectorAll("#config-sectores .check-item");
+  for (const row of filas){
+    const nombreInput = row.querySelector(".cfg-nombre");
+    const caudalInput = row.querySelector(".cfg-caudal");
+    const sec = nombreInput.dataset.sector;
+    const nombre = nombreInput.value.trim() || `Sector ${sec}`;
+    const caudal = Number(caudalInput.value || 0);
+
+    publishCmd(`${TOKEN_SUPER}:SETSALIDA:${sec}:4:${sec}:${nombre}`);
+    publishCmd(`${TOKEN_SUPER}:SETCAUDALSECTOR:${sec}:${caudal}`);
+
+    const salidaRef = doc(collection(currentUnidadRef, "Salidas"), sec);
+    await setDoc(salidaRef, { nombre, tipo: 4 }, { merge: true });
+  }
+  const salidasSnap = await getDocs(collection(currentUnidadRef, "Salidas"));
+  salidasCache = [];
+  salidasSnap.forEach(s => salidasCache.push({ id: s.id, ...s.data() }));
+  salidasCache.sort((a,b) => a.id.localeCompare(b.id));
+  renderSectoresManual();
+  renderChecklistProgramas();
+
+  toast("Sectores actualizados");
+};
+
+window.borrarAlertas = function(){
+  publishCmd(`${TOKEN_SUPER}:RESETFALLAS`);
+  setTimeout(()=>publishCmd(`${TOKEN_OP}:GETESTADO`), 300);
+  toast("Alertas borradas");
+};
+
+window.consultarConfigEquipo = function(){
+  publishCmd(`${TOKEN_OP}:GETCONFIG`);
+};
+
+// CONFIG:zona_horaria:tipo_agua
+function parseConfig(msg){
+  const parts = msg.split(":");
+  const tipoAgua = parts[2];
+  const select = document.getElementById("config-caudal");
+  if (select && tipoAgua !== undefined) select.value = tipoAgua;
+}
+
+window.guardarCaudal = function(){
+  const tipo = document.getElementById("config-caudal").value;
+  publishCmd(`${TOKEN_SUPER}:SETCAUDAL:${tipo}`);
+  setTimeout(()=>publishCmd(`${TOKEN_OP}:GETCONFIG`), 300);
+  toast("Caudalímetro actualizado");
+};
+
+window.consultarHoraEquipo = function(){
+  publishCmd(`${TOKEN_OP}:GETHORA`);
+};
+
+window.iniciarProgramaAhora = function(){
+  const n = document.getElementById("prog-select").value;
+  publishCmd(`${TOKEN_OP}:INICIAR:${n}`);
+  setTimeout(()=>publishCmd(`${TOKEN_OP}:GETESTADO`), 300);
+  toast(`Programa ${n} iniciado`);
+};
+
+window.sendDetener = function(){ publishCmd(`${TOKEN_OP}:DETENER`); setTimeout(()=>publishCmd(`${TOKEN_OP}:GETESTADO`), 300); };
+window.sendSaltar = function(){ publishCmd(`${TOKEN_OP}:SALTAR`); setTimeout(()=>publishCmd(`${TOKEN_OP}:GETESTADO`), 300); };
+window.togglePausa = function(){
+  publishCmd(`${TOKEN_OP}:${pausado ? "REANUDAR" : "PAUSAR"}`);
+  setTimeout(()=>publishCmd(`${TOKEN_OP}:GETESTADO`), 300);
+};
+
+// ---------- PROGRAMAS ----------
+const DIAS = [
+  { n: "LUN", label: "Lun" }, { n: "MAR", label: "Mar" }, { n: "MIE", label: "Mié" },
+  { n: "JUE", label: "Jue" }, { n: "VIE", label: "Vie" }, { n: "SAB", label: "Sáb" }, { n: "DOM", label: "Dom" }
+];
+// Orden fijo que espera el firmware en SETDIAS (0=Domingo...6=Sábado, convención RTClib)
+const ORDEN_SETDIAS = ["DOM","LUN","MAR","MIE","JUE","VIE","SAB"];
+
+function renderChecklistProgramas(){
+  const diasEl = document.getElementById("prog-dias");
+  diasEl.innerHTML = "";
+  DIAS.forEach(d => {
+    const chip = document.createElement("div");
+    chip.className = "day-chip";
+    chip.textContent = d.label;
+    chip.dataset.dia = d.n;
+    chip.onclick = () => chip.classList.toggle("on");
+    diasEl.appendChild(chip);
+  });
+
+  const list = document.getElementById("prog-sectores");
+  list.innerHTML = "";
+  const valvulas = salidasCache.filter(s => Number(s.tipo) === 4);
+  valvulas.forEach(s => {
+    const item = document.createElement("div");
+    item.className = "check-item";
+    item.innerHTML = `
+      <input type="checkbox" data-sector="${s.id}" class="prog-check">
+      <span class="sname">${s.nombre || ("Sector " + s.id)}</span>
+      <input type="number" min="0" max="23" placeholder="h" class="dur-hh prog-dur-hh" data-sector="${s.id}">
+      <input type="number" min="0" max="59" placeholder="m" class="dur-mm prog-dur-mm" data-sector="${s.id}">
+    `;
+    list.appendChild(item);
+  });
+}
+
+window.loadPrograma = async function(){
+  const n = document.getElementById("prog-select").value;
+  const progRef = doc(collection(currentUnidadRef, "Programas"), n);
+  const snap = await getDoc(progRef);
+
+  document.querySelectorAll(".day-chip").forEach(c => c.classList.remove("on"));
+  document.querySelectorAll(".prog-check").forEach(c => c.checked = false);
+  document.querySelectorAll(".prog-dur-hh").forEach(c => c.value = "");
+  document.querySelectorAll(".prog-dur-mm").forEach(c => c.value = "");
+  document.getElementById("prog-activo").checked = false;
+  document.getElementById("prog-hora").value = "";
+
+  if (snap.exists()){
+    const p = snap.data();
+    document.getElementById("prog-activo").checked = !!p.activo;
+    document.getElementById("prog-hora").value = p.hora_inicio || "";
+    (p.dias || []).forEach(d => {
+      const chip = document.querySelector(`.day-chip[data-dia="${String(d).toUpperCase()}"]`);
+      if (chip) chip.classList.add("on");
+    });
+    (p.sectores || []).forEach(sec => {
+      const chk = document.querySelector(`.prog-check[data-sector="${sec}"]`);
+      if (chk) chk.checked = true;
+      const dur = (p.duraciones && p.duraciones[sec]) || "";
+      const [hh, mm] = dur.split(":");
+      const hhInput = document.querySelector(`.prog-dur-hh[data-sector="${sec}"]`);
+      const mmInput = document.querySelector(`.prog-dur-mm[data-sector="${sec}"]`);
+      if (hhInput && hh !== undefined) hhInput.value = hh;
+      if (mmInput && mm !== undefined) mmInput.value = mm;
+    });
+  }
+};
+
+window.guardarPrograma = async function(){
+  const n = document.getElementById("prog-select").value;
+  const activo = document.getElementById("prog-activo").checked;
+  const hora = document.getElementById("prog-hora").value; // puede quedar vacía si solo se usará manual
+
+  const dias = Array.from(document.querySelectorAll(".day-chip.on")).map(c => c.dataset.dia);
+
+  const sectores = [];
+  const duraciones = {};
+  const horasMinutos = {};
+  document.querySelectorAll(".prog-check").forEach(chk => {
+    if (chk.checked){
+      const sec = chk.dataset.sector;
+      const hh = Number(document.querySelector(`.prog-dur-hh[data-sector="${sec}"]`).value || 0);
+      const mm = Number(document.querySelector(`.prog-dur-mm[data-sector="${sec}"]`).value || 0);
+      if (hh * 60 + mm <= 0){ return; }
+      sectores.push(Number(sec));
+      duraciones[sec] = `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+      horasMinutos[sec] = { hh, mm };
+    }
+  });
+  if (sectores.length === 0){ toast("Selecciona al menos un sector con duración"); return; }
+
+  const progRef = doc(collection(currentUnidadRef, "Programas"), n);
+  await setDoc(progRef, { activo, hora_inicio: hora, dias, sectores, duraciones }, { merge: true });
+
+  const [hh, mm] = (hora || "00:00").split(":");
+  publishCmd(`${TOKEN_OP}:SETPROG:${n}:${activo ? 1 : 0}:0:${hh}:${mm}`); // loop=0 fijo (no expuesto en la UI aún)
+  const flagsDias = ORDEN_SETDIAS.map(d => dias.includes(d) ? 1 : 0).join(":");
+  publishCmd(`${TOKEN_OP}:SETDIAS:${n}:${flagsDias}`);
+
+  // Enviar SETSECTOR para TODOS los sectores (1-6): habilitados con su duracion,
+  // el resto explicitamente deshabilitados para no dejar config vieja activa en el equipo.
+  const valvulas = salidasCache.filter(s => Number(s.tipo) === 4);
+  valvulas.forEach(s => {
+    const sec = s.id;
+    if (sectores.includes(Number(sec))){
+      const { hh, mm } = horasMinutos[sec];
+      publishCmd(`${TOKEN_OP}:SETSECTOR:${n}:${sec}:1:${hh}:${mm}`);
+    } else {
+      publishCmd(`${TOKEN_OP}:SETSECTOR:${n}:${sec}:0:0:0`);
+    }
+  });
+
+  toast("Programa guardado");
+};
+</script>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
