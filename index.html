@@ -267,12 +267,24 @@
     </div>
 
     <div class="card">
-      <h3 style="font-size:14px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:0;" onclick="toggleCard('historial-body','chevron-historial'); cargarHistorial();">
+      <h3 style="font-size:14px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:0;" onclick="if(toggleCard('historial-body','chevron-historial')){ cargarHistorial(); }">
         Últimos riegos
         <span class="chevron" id="chevron-historial">▾</span>
       </h3>
       <div id="historial-body" style="max-height:0;overflow:hidden;opacity:0;transition:max-height .25s ease, opacity .2s ease, margin-top .25s ease;">
         <div id="historial-lista" style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
+          <div class="hint">Cargando...</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:14px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:0;" onclick="if(toggleCard('alertas-body','chevron-alertas')){ cargarAlertas(); }">
+        Últimas alertas
+        <span class="chevron" id="chevron-alertas">▾</span>
+      </h3>
+      <div id="alertas-body" style="max-height:0;overflow:hidden;opacity:0;transition:max-height .25s ease, opacity .2s ease, margin-top .25s ease;">
+        <div id="alertas-lista" style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
           <div class="hint">Cargando...</div>
         </div>
       </div>
@@ -426,6 +438,7 @@ function connectMqtt(){
     if (msg.startsWith("EST:")) parseEstado(msg);
     if (msg.startsWith("HORA:")) parseHora(msg);
     if (msg.startsWith("REG:")) parseRegistros(msg);
+    if (msg.startsWith("ALE:")) parseAlertas(msg);
     if (msg.startsWith("CONFIG:")) parseConfig(msg);
     if (msg.startsWith("SAL:")) parseSalida(msg);
   });
@@ -475,7 +488,9 @@ function formatEstadoTexto(codigo){
 // EST:sector:programa:m3:estado:seg_transcurridos:horas_config:min_config:pausa:modo:seg_duracion_total
 function parseEstado(msg){
   const parts = msg.split(":");
-  document.getElementById("est-sector").textContent = parts[1] ?? "—";
+  const sectorNum = parts[1] ?? "—";
+  const salidaSector = salidasCache.find(s => s.id === sectorNum);
+  document.getElementById("est-sector").textContent = salidaSector?.nombre || `Sector ${sectorNum}`;
   document.getElementById("est-estado").textContent = formatEstadoTexto(parts[4]);
   const caudalM3 = Number(parts[3] ?? 0);
   document.getElementById("est-caudal").textContent = caudalM3.toFixed(3) + " m³";
@@ -699,6 +714,53 @@ function parseRegistros(msg){
       <div style="display:flex;justify-content:space-between;color:var(--text-dim);">
         <span>${progTexto} · ${formatHHMMSS(duracionSeg)}</span>
         <span>${Number(m3).toFixed(3)} m³</span>
+      </div>
+    `;
+    lista.appendChild(item);
+  }
+}
+
+window.cargarAlertas = function(){
+  document.getElementById("alertas-lista").innerHTML = `<div class="hint">Cargando...</div>`;
+  publishCmd(`${TOKEN_OP}:GETALERTAS`);
+};
+
+const ALERTA_TIPO_TEXTO = { "0": "Caudal cero", "1": "Caudal bajo", "2": "Caudal alto" };
+const ALERTA_TIPO_COLOR = { "0": "#e74c3c", "1": "#f39c12", "2": "#f39c12" };
+
+// ALE:count:DD:MM:HH:MM:sector:tipo:caudal_actual:caudal_esperado:...
+function parseAlertas(msg){
+  const parts = msg.split(":");
+  const count = Number(parts[1] ?? 0);
+  const lista = document.getElementById("alertas-lista");
+  if (count === 0){
+    lista.innerHTML = `<div class="hint">Sin alertas registradas aún.</div>`;
+    return;
+  }
+  lista.innerHTML = "";
+  let idx = 2;
+  for (let n = 0; n < count; n++){
+    const dd = parts[idx++];
+    const mo = parts[idx++];
+    const hh = parts[idx++];
+    const mm = parts[idx++];
+    const sector = parts[idx++];
+    const tipo = parts[idx++];
+    const caudalActual = parts[idx++];
+    const caudalEsperado = parts[idx++];
+    const fechaHora = `${String(dd).padStart(2,"0")}/${String(mo).padStart(2,"0")} ${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+    const tipoTexto = ALERTA_TIPO_TEXTO[tipo] ?? "Alerta";
+    const tipoColor = ALERTA_TIPO_COLOR[tipo] ?? "var(--danger)";
+    const item = document.createElement("div");
+    item.style.cssText = "background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;";
+    item.innerHTML = `
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <b>Sector ${sector} · <span style="color:${tipoColor};">${tipoTexto}</span></b>
+        <span style="color:var(--text-dim);">${fechaHora}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;color:var(--text-dim);">
+        <span>Actual: ${Number(caudalActual).toFixed(2)} m³/h</span>
+        <span>Esperado: ${Number(caudalEsperado).toFixed(2)} m³/h</span>
       </div>
     `;
     lista.appendChild(item);
