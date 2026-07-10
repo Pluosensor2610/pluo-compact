@@ -154,6 +154,12 @@
   .check-item input[type=checkbox]{width:18px;height:18px;flex:none;}
   .check-item .sname{flex:1;font-size:14px;}
   .check-item input[type=number]{width:52px;flex:none;text-align:center;}
+  .switch{position:relative;display:inline-block;width:44px;height:24px;flex:none;}
+  .switch input{opacity:0;width:0;height:0;}
+  .switch .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--line);transition:.2s;border-radius:24px;}
+  .switch .slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;transition:.2s;border-radius:50%;}
+  .switch input:checked + .slider{background:var(--teal);}
+  .switch input:checked + .slider:before{transform:translateX(20px);}
   .days{display:flex;gap:6px;flex-wrap:wrap;}
   .day-chip{
     padding:8px 0;width:38px;text-align:center;border-radius:8px;
@@ -266,6 +272,19 @@
       </div>
     </div>
 
+    <div class="card" id="card-auxiliares" style="display:none;">
+      <h3 style="font-size:14px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:0;" onclick="if(toggleCard('auxiliares-body','chevron-auxiliares')){ renderAuxiliares(); }">
+        Auxiliares
+        <span class="chevron" id="chevron-auxiliares">▾</span>
+      </h3>
+      <div id="auxiliares-body" style="max-height:0;overflow:hidden;opacity:0;transition:max-height .25s ease, opacity .2s ease, margin-top .25s ease;">
+        <div id="auxiliares-lista" style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
+          <div class="hint">Cargando...</div>
+        </div>
+        <div class="hint">Encendido/apagado directo, independiente del riego y sin activar la bomba.</div>
+      </div>
+    </div>
+
     <div class="card">
       <h3 style="font-size:14px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:0;" onclick="if(toggleCard('historial-body','chevron-historial')){ cargarHistorial(); }">
         Últimos riegos
@@ -308,7 +327,7 @@
         <button class="btn-primary" style="width:100%" onclick="guardarCaudal()">Guardar caudalímetro</button>
 
         <div class="field" style="margin-top:20px;">
-          <label>Sectores — nombre y caudal esperado (m³/h)</label>
+          <label>Salidas — tipo, nombre y caudal esperado (solo válvulas)</label>
         </div>
         <div id="config-sectores" style="display:flex;flex-direction:column;gap:8px;"></div>
         <button class="btn-primary" style="width:100%;margin-top:10px;" onclick="guardarSectores()">Guardar sectores</button>
@@ -605,6 +624,7 @@ async function openUnidad(unidadRef, unidadData){
 
   renderSectoresManual();
   renderChecklistProgramas();
+  actualizarVisibilidadAuxiliares();
 
   if (mqttClient && mqttClient.connected){
     subscribeUnidad(currentDeviceId);
@@ -767,47 +787,85 @@ function parseAlertas(msg){
   }
 }
 
+const TIPO_SALIDA_OPCIONES = [
+  { v: 0, t: "No asignada" },
+  { v: 1, t: "Bomba riego" },
+  { v: 4, t: "Válvula sector" },
+  { v: 5, t: "Auxiliar" },
+];
+
+function actualizarVisibilidadAuxiliares(){
+  const hayAux = salidasCache.some(s => Number(s.tipo) === 5);
+  document.getElementById("card-auxiliares").style.display = hayAux ? "block" : "none";
+}
+
 window.renderConfigSectores = function(){
   const cont = document.getElementById("config-sectores");
   cont.innerHTML = "";
-  const valvulas = salidasCache.filter(s => Number(s.tipo) === 4);
-  valvulas.forEach(s => {
+  for (let n = 1; n <= 6; n++){
+    const s = salidasCache.find(x => x.id === String(n)) || {};
+    const tipoActual = Number(s.tipo ?? 0);
     const row = document.createElement("div");
     row.className = "check-item";
+    row.dataset.salida = n;
+    const opciones = TIPO_SALIDA_OPCIONES.map(o =>
+      `<option value="${o.v}" ${o.v === tipoActual ? "selected" : ""}>${o.t}</option>`
+    ).join("");
     row.innerHTML = `
-      <input type="text" data-sector="${s.id}" class="cfg-nombre" value="${s.nombre || ''}" placeholder="Nombre" style="flex:1;text-align:left;">
-      <input type="number" step="0.1" min="0" data-sector="${s.id}" class="cfg-caudal" placeholder="m³/h" style="width:70px;text-align:center;">
+      <select class="cfg-tipo" data-salida="${n}" style="width:120px;" onchange="onCambioTipoSalida(this)">${opciones}</select>
+      <input type="text" data-salida="${n}" class="cfg-nombre" value="${s.nombre || ''}" placeholder="Nombre" style="flex:1;text-align:left;">
+      <input type="number" step="0.1" min="0" data-salida="${n}" class="cfg-caudal" placeholder="m³/h" style="width:70px;text-align:center;display:${tipoActual === 4 ? 'block' : 'none'};">
     `;
     cont.appendChild(row);
-    publishCmd(`${TOKEN_OP}:GETSALIDA:${s.id}`);
-  });
+    publishCmd(`${TOKEN_OP}:GETSALIDA:${n}`);
+  }
 };
 
-// SAL:n:tipo:sector_asoc:nombre:caudal_esperado
+window.onCambioTipoSalida = function(select){
+  const row = select.closest(".check-item");
+  const caudalInput = row.querySelector(".cfg-caudal");
+  caudalInput.style.display = Number(select.value) === 4 ? "block" : "none";
+};
+
+// SAL:n:tipo:sector_asoc:nombre:caudal_esperado:estado
 function parseSalida(msg){
   const parts = msg.split(":");
   const n = parts[1];
-  const caudalInput = document.querySelector(`.cfg-caudal[data-sector="${n}"]`);
+  const tipoSelect = document.querySelector(`.cfg-tipo[data-salida="${n}"]`);
+  const caudalInput = document.querySelector(`.cfg-caudal[data-salida="${n}"]`);
+  if (tipoSelect){
+    const tipo = parts[2];
+    if (tipo !== undefined) tipoSelect.value = tipo;
+    if (caudalInput) caudalInput.style.display = Number(tipo) === 4 ? "block" : "none";
+  }
   if (caudalInput){
     const caudal = parts[5];
     if (caudal !== undefined) caudalInput.value = Number(caudal) > 0 ? caudal : "";
+  }
+  const auxToggle = document.querySelector(`.aux-toggle[data-salida="${n}"]`);
+  if (auxToggle){
+    const estado = parts[6];
+    auxToggle.checked = estado === "1";
   }
 }
 
 window.guardarSectores = async function(){
   const filas = document.querySelectorAll("#config-sectores .check-item");
   for (const row of filas){
+    const tipoSelect = row.querySelector(".cfg-tipo");
     const nombreInput = row.querySelector(".cfg-nombre");
     const caudalInput = row.querySelector(".cfg-caudal");
-    const sec = nombreInput.dataset.sector;
-    const nombre = nombreInput.value.trim() || `Sector ${sec}`;
-    const caudal = Number(caudalInput.value || 0);
+    const n = tipoSelect.dataset.salida;
+    const tipo = Number(tipoSelect.value);
+    const nombre = nombreInput.value.trim() || `Salida ${n}`;
+    const caudal = tipo === 4 ? Number(caudalInput.value || 0) : 0;
+    const sectorAsoc = tipo === 4 ? n : 0;
 
-    publishCmd(`${TOKEN_SUPER}:SETSALIDA:${sec}:4:${sec}:${nombre}`);
-    publishCmd(`${TOKEN_SUPER}:SETCAUDALSECTOR:${sec}:${caudal}`);
+    publishCmd(`${TOKEN_SUPER}:SETSALIDA:${n}:${tipo}:${sectorAsoc}:${nombre}`);
+    if (tipo === 4) publishCmd(`${TOKEN_SUPER}:SETCAUDALSECTOR:${n}:${caudal}`);
 
-    const salidaRef = doc(collection(currentUnidadRef, "Salidas"), sec);
-    await setDoc(salidaRef, { nombre, tipo: 4 }, { merge: true });
+    const salidaRef = doc(collection(currentUnidadRef, "Salidas"), n);
+    await setDoc(salidaRef, { nombre, tipo }, { merge: true });
   }
   const salidasSnap = await getDocs(collection(currentUnidadRef, "Salidas"));
   salidasCache = [];
@@ -815,8 +873,37 @@ window.guardarSectores = async function(){
   salidasCache.sort((a,b) => a.id.localeCompare(b.id));
   renderSectoresManual();
   renderChecklistProgramas();
+  actualizarVisibilidadAuxiliares();
 
-  toast("Sectores actualizados");
+  toast("Salidas actualizadas");
+};
+
+window.renderAuxiliares = function(){
+  const lista = document.getElementById("auxiliares-lista");
+  lista.innerHTML = "";
+  const auxiliares = salidasCache.filter(s => Number(s.tipo) === 5);
+  if (auxiliares.length === 0){
+    lista.innerHTML = `<div class="hint">No hay salidas auxiliares configuradas.</div>`;
+    return;
+  }
+  auxiliares.forEach(s => {
+    const row = document.createElement("div");
+    row.className = "check-item";
+    row.innerHTML = `
+      <span style="flex:1;">${s.nombre || `Salida ${s.id}`}</span>
+      <label class="switch">
+        <input type="checkbox" class="aux-toggle" data-salida="${s.id}" onchange="toggleAux(this)">
+        <span class="slider"></span>
+      </label>
+    `;
+    lista.appendChild(row);
+    publishCmd(`${TOKEN_OP}:GETSALIDA:${s.id}`);
+  });
+};
+
+window.toggleAux = function(checkbox){
+  const n = checkbox.dataset.salida;
+  publishCmd(`${TOKEN_OP}:SETAUX:${n}:${checkbox.checked ? 1 : 0}`);
 };
 
 window.borrarAlertas = function(){
