@@ -277,7 +277,7 @@
     </div>
 
     <div class="card">
-      <h3 style="font-size:14px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:0;" onclick="toggleCard('config-body','chevron-config'); consultarConfigEquipo(); renderConfigSectores();">
+      <h3 style="font-size:14px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:0;" onclick="if(toggleCard('config-body','chevron-config')){ consultarConfigEquipo(); renderConfigSectores(); }">
         Configuración
         <span class="chevron" id="chevron-config">▾</span>
       </h3>
@@ -311,10 +311,12 @@
         body.style.maxHeight = "0px";
         body.style.opacity = "0";
         chevron.style.transform = "rotate(0deg)";
+        return false; // quedo cerrado
       } else {
         body.style.maxHeight = "2000px";
         body.style.opacity = "1";
         chevron.style.transform = "rotate(180deg)";
+        return true; // quedo abierto
       }
     };
   </script>
